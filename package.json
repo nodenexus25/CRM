@@ -1,0 +1,40 @@
+{
+  "name": "talentflow",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:api": "pnpm --filter @talentflow/api dev",
+    "dev:web": "pnpm --filter @talentflow/web dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,yml}\"",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:reset": "docker compose down -v",
+    "infra:logs": "docker compose logs -f",
+    "db:generate": "pnpm --filter @talentflow/api prisma:generate",
+    "db:migrate": "pnpm --filter @talentflow/api prisma:migrate",
+    "db:deploy": "pnpm --filter @talentflow/api prisma:deploy",
+    "db:seed": "pnpm --filter @talentflow/api prisma:seed",
+    "db:seed:load": "pnpm --filter @talentflow/api prisma:seed:load",
+    "db:rls": "pnpm --filter @talentflow/api prisma:rls",
+    "db:reset": "pnpm --filter @talentflow/api prisma:reset",
+    "db:studio": "pnpm --filter @talentflow/api prisma:studio",
+    "setup": "pnpm install && pnpm infra:up && pnpm db:migrate && pnpm db:seed && pnpm db:rls"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "turbo": "^2.5.8",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,2348 @@
+// =============================================================================
+// TalentFlow — Prisma schema
+//
+// Conventions applied to every tenant-owned table:
+//   id            String   @id @default(cuid())
+//   tenantId      String   (indexed; every uniqueness constraint compounds on it)
+//   createdAt / updatedAt / deletedAt            (soft delete)
+//   createdById / updatedById  String?           (actor stamps)
+//
+// Actor stamps are plain columns rather than foreign keys on purpose: they must
+// survive user deletion and be writable by background jobs that have no User
+// row. The authoritative, queryable actor relationship lives in `AuditLog`.
+//
+// Tests in `apps/api/test/enum-parity.spec.ts` assert that these enums match
+// their Zod counterparts in `packages/types`.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  UNPAID
+  PAUSED
+  CANCELED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+  MANUAL
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum RoleKey {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  RECRUITER_MANAGER
+  RECRUITER
+  ACCOUNT_MANAGER
+  VIEWER
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  INVITE
+}
+
+enum Visibility {
+  PRIVATE
+  TEAM
+  TENANT
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum ClientStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+  CHURNED
+}
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  ON_HOLD
+  CLOSED
+  FILLED
+  CANCELLED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  CONTRACT_TO_HIRE
+  C2C
+  W2
+  INTERNSHIP
+}
+
+enum RemoteType {
+  ONSITE
+  REMOTE
+  HYBRID
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum StageType {
+  SOURCING
+  SCREENING
+  SUBMISSION
+  CLIENT_REVIEW
+  INTERVIEW
+  OFFER
+  PLACEMENT
+  REJECTED
+  WITHDRAWN
+}
+
+enum ApplicationStatus {
+  ACTIVE
+  ON_HOLD
+  REJECTED
+  WITHDRAWN
+  PLACED
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  CLIENT_VIEWED
+  SHORTLISTED
+  INTERVIEWING
+  OFFERED
+  REJECTED
+  WITHDRAWN
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  ONSITE
+  TECHNICAL
+  PANEL
+  HR
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  RESCHEDULED
+}
+
+enum OfferStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum PlacementStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  TERMINATED
+}
+
+enum CandidateSource {
+  LINKEDIN
+  INDEED
+  JOB_BOARD
+  REFERRAL
+  WEBSITE
+  AGENCY
+  CAMPUS
+  MANUAL
+  IMPORT
+  OTHER
+}
+
+enum WorkAuthorization {
+  CITIZEN
+  PERMANENT_RESIDENT
+  WORK_VISA
+  STUDENT_VISA
+  REQUIRES_SPONSORSHIP
+  UNKNOWN
+  OTHER
+}
+
+enum Availability {
+  IMMEDIATE
+  TWO_WEEKS
+  ONE_MONTH
+  TWO_MONTHS
+  THREE_MONTHS
+  NOT_LOOKING
+}
+
+enum ResumeParseStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  /// The file has no extractable text layer (scanned image PDF); OCR is out of
+  /// scope, so the resume is surfaced to the user with a clear message instead.
+  NEEDS_OCR
+}
+
+/// Semantic bucket every pipeline stage belongs to. Reporting and the Kanban
+/// behaviour (rejection dialog, placement prompt) key off this rather than the
+/// tenant-editable `type`, so a renamed stage still behaves correctly.
+enum StageCategory {
+  ACTIVE
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum SkillProficiency {
+  BASIC
+  CONVERSATIONAL
+  PROFESSIONAL
+  NATIVE
+}
+
+/// Long-running bulk operation over a filter-based selection.
+enum BulkOperationType {
+  CANDIDATE_TAGS
+  CANDIDATE_OWNER
+  CANDIDATE_STATUS
+  CANDIDATE_ADD_TO_JOB
+  CANDIDATE_ADD_TO_LIST
+  CANDIDATE_DELETE
+  CANDIDATE_EXPORT
+  JOB_STATUS
+  JOB_PRIORITY
+  JOB_ASSIGN_RECRUITERS
+}
+
+enum BulkOperationStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ExperienceLevel {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  PRINCIPAL
+  EXECUTIVE
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  SMS
+  LINKEDIN
+  TASK
+  INTERVIEW
+  SUBMISSION
+  STAGE_CHANGE
+  SYSTEM
+}
+
+enum ActivityDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum EmailMessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+  RECEIVED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum CustomFieldEntity {
+  CANDIDATE
+  JOB
+  CLIENT
+  CONTACT
+}
+
+enum CustomFieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  CURRENCY
+  DATE
+  DATETIME
+  BOOLEAN
+  SELECT
+  MULTI_SELECT
+  URL
+  EMAIL
+  PHONE
+}
+
+enum ImportEntityType {
+  CANDIDATE
+  CLIENT
+  JOB
+  CONTACT
+}
+
+enum ImportStatus {
+  PENDING
+  MAPPING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  VIEW
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  EXPORT
+  IMPORT
+  IMPERSONATE
+  INVITE
+  PASSWORD_RESET
+  PERMISSION_CHANGE
+  STATUS_CHANGE
+}
+
+/// Discriminator for polymorphic tables (Activity, TagLink, Attachment, Note).
+enum EntityType {
+  CANDIDATE
+  CLIENT
+  CONTACT
+  JOB
+  APPLICATION
+  INTERVIEW
+  OFFER
+  PLACEMENT
+  USER
+  TEAM
+  TENANT
+}
+
+// -----------------------------------------------------------------------------
+// Platform: plans, subscriptions, invoices
+// -----------------------------------------------------------------------------
+
+model Plan {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+
+  /// Prices in the smallest currency unit (cents / paise).
+  monthlyPriceCents Int    @default(0)
+  yearlyPriceCents  Int    @default(0)
+  currency          String @default("USD")
+
+  /// Hard limits. `null` means unlimited.
+  includedSeats Int?
+  maxJobs       Int?
+  maxCandidates Int?
+  storageGb     Int?
+  aiCredits     Int?
+
+  /// Feature flag map consumed by `FeatureFlagService`.
+  /// Example: { "aiMatching": false, "sso": true, "customFields": true }
+  features Json @default("{}")
+
+  isPublic  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  stripePriceIdMonthly   String?
+  stripePriceIdYearly    String?
+  razorpayPlanIdMonthly  String?
+  razorpayPlanIdYearly   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([isPublic, sortOrder])
+  @@map("plans")
+}
+
+model Subscription {
+  id       String  @id @default(cuid())
+  tenantId String  @unique
+  planId   String
+  status   SubscriptionStatus @default(TRIALING)
+
+  provider PaymentProvider @default(MANUAL)
+  interval BillingInterval @default(MONTHLY)
+  seats    Int             @default(1)
+
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+  canceledAt         DateTime?
+
+  providerCustomerId     String?
+  providerSubscriptionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan     Plan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  invoices Invoice[]
+
+  @@index([status])
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String  @id @default(cuid())
+  tenantId       String
+  subscriptionId String?
+
+  number      String        @unique
+  status      InvoiceStatus @default(DRAFT)
+  provider    PaymentProvider @default(MANUAL)
+  currency    String        @default("USD")
+
+  subtotalCents Int @default(0)
+  taxCents      Int @default(0)
+  totalCents    Int @default(0)
+
+  /// Line items: [{ description, quantity, unitAmountCents, amountCents }]
+  lineItems Json @default("[]")
+
+  periodStart DateTime?
+  periodEnd   DateTime?
+  issuedAt    DateTime  @default(now())
+  dueAt       DateTime?
+  paidAt      DateTime?
+
+  providerInvoiceId String?
+  hostedInvoiceUrl  String?
+  pdfUrl            String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, issuedAt])
+  @@map("invoices")
+}
+
+// -----------------------------------------------------------------------------
+// Tenant (workspace)
+// -----------------------------------------------------------------------------
+
+model Tenant {
+  id     String @id @default(cuid())
+  name   String
+  slug   String @unique
+  status TenantStatus @default(TRIAL)
+
+  /// Marks the internal workspace that hosts platform staff. Hidden from the
+  /// super-admin tenant directory.
+  isPlatform Boolean @default(false)
+
+  logoUrl       String?
+  brandColor    String  @default("#4F46E5")
+  primaryDomain String? @unique
+
+  /// Workspace settings: timezone, currency, dateFormat, address, submission
+  /// defaults, email signature. Shape validated by `tenantSettingsSchema`.
+  settings Json @default("{}")
+
+  trialEndsAt     DateTime?
+  suspendedAt     DateTime?
+  suspendedReason String?
+  referralSource  String?
+  onboardedAt     DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  users             User[]
+  roles             Role[]
+  rolePermissions   RolePermission[]
+  userRoles         UserRole[]
+  teams             Team[]
+  teamMembers       TeamMember[]
+  refreshTokens     RefreshToken[]
+  authTokens        AuthToken[]
+  subscription      Subscription?
+  invoices          Invoice[]
+  clients           Client[]
+  clientContacts    ClientContact[]
+  jobs              Job[]
+  pipelineStages    JobPipelineStage[]
+  jobAssignments    JobAssignment[]
+  skills            Skill[]
+  jobSkills         JobSkill[]
+  candidates        Candidate[]
+  candidateResumes  CandidateResume[]
+  candidateEmails   CandidateEmail[]
+  candidatePhones   CandidatePhone[]
+  experiences       CandidateExperience[]
+  educations        CandidateEducation[]
+  candidateSkills   CandidateSkill[]
+  candidateCertifications CandidateCertification[]
+  candidateLanguages CandidateLanguage[]
+  candidateLists    CandidateList[]
+  candidateListMembers CandidateListMember[]
+  applications      Application[]
+  stageHistory      StageHistory[]
+  interviews        Interview[]
+  interviewers      InterviewInterviewer[]
+  offers            Offer[]
+  placements        Placement[]
+  activities        Activity[]
+  tasks             Task[]
+  notes             Note[]
+  attachments       Attachment[]
+  tags              Tag[]
+  tagLinks          TagLink[]
+  emailTemplates    EmailTemplate[]
+  emailMessages     EmailMessage[]
+  notifications     Notification[]
+  customFields      CustomField[]
+  customFieldValues CustomFieldValue[]
+  auditLogs         AuditLog[]
+  savedSearches     SavedSearch[]
+  importJobs        ImportJob[]
+  importTemplates   ImportTemplate[]
+  bulkOperations    BulkOperation[]
+  tenantSequences   TenantSequence[]
+  rejectionReasons  RejectionReason[]
+  candidateEmbeddings CandidateEmbedding[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("tenants")
+}
+
+// -----------------------------------------------------------------------------
+// Identity & access
+// -----------------------------------------------------------------------------
+
+model User {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  email         String
+  emailVerifiedAt DateTime?
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  title         String?
+  phone         String?
+  avatarUrl     String?
+
+  status        UserStatus @default(INVITED)
+  timezone      String     @default("UTC")
+  locale        String     @default("en-US")
+  isSuperAdmin  Boolean    @default(false)
+  mustChangePassword Boolean @default(false)
+
+  lastLoginAt   DateTime?
+  failedLoginAttempts Int      @default(0)
+  lockedUntil   DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles         UserRole[]
+  ownedJobs         Job[]              @relation("JobOwner")
+  jobAssignments    JobAssignment[]
+  ownedCandidates   Candidate[]        @relation("CandidateOwner")
+  ownedApplications Application[]      @relation("ApplicationOwner")
+  ownedClients      Client[]           @relation("ClientOwner")
+  ledTeams          Team[]             @relation("TeamLeader")
+  teamMemberships   TeamMember[]
+  interviewers      InterviewInterviewer[]
+  assignedTasks     Task[]             @relation("TaskAssignee")
+  savedSearches     SavedSearch[]
+  notifications     Notification[]
+  refreshTokens     RefreshToken[]
+  authTokens        AuthToken[]
+  auditLogs         AuditLog[]         @relation("AuditActor")
+
+  /// Email is unique per workspace — the same person may exist in two tenants.
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
+  @@index([email])
+  @@map("users")
+}
+
+/// Global permission catalogue, seeded from `packages/types/src/permissions.ts`.
+model Permission {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  group       String
+  label       String
+  description String
+  isPlatform  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([group])
+  @@map("permissions")
+}
+
+model Role {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  /// Set for the six built-in templates; `null` for tenant-created roles.
+  key         RoleKey?
+  name        String
+  description String?
+
+  /// Higher priority wins when resolving the display role.
+  priority  Int     @default(0)
+  isSystem  Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, key])
+  @@map("roles")
+}
+
+model RolePermission {
+  tenantId     String
+  roleId       String
+  permissionId String
+  effect       PermissionEffect @default(ALLOW)
+
+  createdAt DateTime @default(now())
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([tenantId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  tenantId String
+  userId   String
+  roleId   String
+
+  assignedById String?
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([tenantId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Team {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  name        String
+  description String?
+  color       String?
+  parentId    String?
+  leaderId    String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   Team?        @relation("TeamHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Team[]       @relation("TeamHierarchy")
+  leader   User?        @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  members  TeamMember[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, parentId])
+  @@map("teams")
+}
+
+model TeamMember {
+  tenantId String
+  teamId   String
+  userId   String
+
+  isLead    Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+/// One row per active refresh token. Rotation + reuse detection keyed on
+/// `familyId`: replaying a rotated token revokes the whole family.
+model RefreshToken {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+
+  /// SHA-256 of the opaque token. The raw value only ever lives in the cookie.
+  tokenHash String  @unique
+  familyId  String
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  /// Set when this token was rotated; used to detect replay of an old token.
+  replacedById String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Single-use, hashed tokens for email verification, password reset and invites.
+model AuthToken {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String?
+  email    String
+
+  type      AuthTokenType
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  meta      Json          @default("{}")
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email, type])
+  @@index([expiresAt])
+  @@map("auth_tokens")
+}
+
+// -----------------------------------------------------------------------------
+// CRM: clients & contacts
+// -----------------------------------------------------------------------------
+
+model Client {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  name         String
+  legalName    String?
+  status       ClientStatus @default(PROSPECT)
+  industry     String?
+  website      String?
+  phone        String?
+  email        String?
+  description  String?
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+
+  /// Commercial terms used as defaults on new jobs.
+  defaultBillRateCents Int?
+  defaultFeePercentage Decimal? @db.Decimal(5, 2)
+  paymentTermsDays     Int?
+  currency             String?
+
+  ownerId String?
+  /// Tenant-defined field values (see CustomField).
+  customFields Json @default("{}")
+
+  externalId String?
+  source     String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner    User?           @relation("ClientOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  contacts ClientContact[]
+  jobs     Job[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, name])
+  @@index([tenantId, ownerId])
+  @@map("clients")
+}
+
+model ClientContact {
+  id       String  @id @default(cuid())
+  tenantId String
+  clientId String
+
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  title     String?
+  department String?
+  isPrimary Boolean @default(false)
+  notes     String?
+
+  customFields Json @default("{}")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  jobs   Job[]
+
+  @@index([tenantId, clientId])
+  @@index([tenantId, email])
+  @@index([tenantId, deletedAt])
+  @@map("client_contacts")
+}
+
+// -----------------------------------------------------------------------------
+// ATS: skills, jobs, pipeline
+// -----------------------------------------------------------------------------
+
+model Skill {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  name     String
+  /// Alternative spellings mapped onto this canonical skill ("ReactJS", "k8s").
+  aliases  String[] @default([])
+  category String?
+  isSystem Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobSkills      JobSkill[]
+  candidateSkills CandidateSkill[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, category])
+  @@map("skills")
+}
+
+model Job {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  title           String
+  referenceCode   String
+  /// Numeric part of `referenceCode` (`JOB-0001` → 1), allocated from
+  /// `TenantSequence` inside a transaction so it is concurrency-safe.
+  jobCodeSeq      Int?
+  status          JobStatus  @default(DRAFT)
+  jobType         JobType    @default(FULL_TIME)
+  remoteType      RemoteType @default(ONSITE)
+  priority        Priority   @default(MEDIUM)
+
+  clientId      String?
+  contactId     String?
+  description   String?
+  requirements  String?
+  responsibilities String?
+
+  locationCity    String?
+  locationState   String?
+  locationCountry String?
+
+  openings      Int @default(1)
+  filledCount   Int @default(0)
+
+  /// Rates in the smallest currency unit.
+  payRateMinCents  Int?
+  payRateMaxCents  Int?
+  billRateCents    Int?
+  /// `HOURLY` | `DAILY` | `MONTHLY` | `ANNUAL` — how the rates are expressed.
+  ratePeriod       String @default("ANNUAL")
+  rateType         String?
+  billRateType     String?
+  currency         String @default("USD")
+  /// Spread between bill and pay stored at save time for reporting.
+  marginCents        Int?
+  marginPercentage   Decimal? @db.Decimal(6, 2)
+
+  minExperienceYears Int?
+  maxExperienceYears Int?
+  educationLevel     String?
+  workAuthorization  WorkAuthorization?
+  /// Work authorisations the client will accept; multi-select.
+  workAuthorizations WorkAuthorization[] @default([])
+  visaSponsorship    Boolean?
+
+  /// Workflow flags completed by the AI JD generator in Phase 6.
+  publishedAt  DateTime?
+  closedAt     DateTime?
+  closedReason String?
+  targetFillAt DateTime?
+  openedAt     DateTime?
+
+  ownerId String?
+  teamId  String?
+
+  externalId String?
+  source     String?
+
+  /// Generated by Postgres from the searchable job columns and queried with
+  /// `to_tsquery`. Declared as `Unsupported` so the migration engine knows the
+  /// column exists (and must not drop it) without trying to manage an
+  /// expression it cannot model.
+  searchVector Unsupported("tsvector")?
+
+  customFields Json @default("{}")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client        Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact       ClientContact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  owner         User?               @relation("JobOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assignments   JobAssignment[]
+  jobSkills     JobSkill[]
+  pipelineStages JobPipelineStage[]
+  applications  Application[]
+  activities    Activity[]
+
+  @@unique([tenantId, referenceCode])
+  @@index([tenantId, status])
+  @@index([tenantId, status, priority])
+  @@index([tenantId, clientId])
+  @@index([tenantId, clientId, status])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, createdAt])
+  /// Full-text index backing global search; the vector is kept current by the
+  /// `jobs_search_vector_trigger` created in `phase2_job_search`.
+  @@index([searchVector], type: Gin)
+  @@map("jobs")
+}
+
+/// Customisable pipeline. Applications point at a stage row so a tenant can
+/// rename, reorder, add and remove stages without a migration.
+///
+/// `jobId = null` marks a tenant-default stage. When a job sets its own pipeline
+/// it gets a full private copy of every stage (`jobId = <job>`), so editing one
+/// job's stages can never affect another job or the tenant default.
+model JobPipelineStage {
+  id       String  @id @default(cuid())
+  tenantId String
+  /// Owning job for a per-job override; `null` for a tenant-default stage.
+  jobId    String?
+
+  /// Stable slug, e.g. `screening`. Unique within its tenant-default set or job.
+  key          String
+  name         String
+  type         StageType
+  /// Behavioural bucket; drives the rejection dialog and placement prompt.
+  category     StageCategory @default(ACTIVE)
+  color        String  @default("#64748b")
+  order        Int
+  isDefault    Boolean @default(false)
+  isTerminal   Boolean @default(false)
+  /// Days a candidate may sit in this stage before being flagged stale.
+  slaDays      Int?
+  description  String?
+  /// Restrict who can move candidates into this stage.
+  requiredPermission String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job          Job?          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applications Application[]
+  historyTo    StageHistory[] @relation("StageHistoryTo")
+  historyFrom  StageHistory[] @relation("StageHistoryFrom")
+
+  @@unique([tenantId, jobId, key])
+  @@index([tenantId, order])
+  @@index([tenantId, jobId, order])
+  @@map("job_pipeline_stages")
+}
+
+model JobAssignment {
+  tenantId String
+  jobId    String
+  userId   String
+
+  /// `OWNER` | `RECRUITER` | `SOURCING` | `COORDINATOR`
+  role      String   @default("RECRUITER")
+  isPrimary Boolean  @default(false)
+  assignedById String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("job_assignments")
+}
+
+model JobSkill {
+  tenantId String
+  jobId    String
+  skillId  String
+
+  /** 1 = nice to have, 2 = required, 3 = must-have */
+  weight   Int     @default(2)
+  required Boolean @default(true)
+  minYears Int?
+
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, skillId])
+  @@index([tenantId])
+  @@index([skillId])
+  @@map("job_skills")
+}
+
+// -----------------------------------------------------------------------------
+// ATS: candidates
+// -----------------------------------------------------------------------------
+
+model Candidate {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  alternatePhone String?
+
+  headline      String?
+  summary       String?
+  currentTitle  String?
+  currentCompany String?
+
+  locationCity    String?
+  locationState   String?
+  locationCountry String?
+  willingToRelocate Boolean @default(false)
+
+  totalExperienceMonths Int?
+  relevantExperienceMonths Int?
+  experienceLevel ExperienceLevel?
+
+  workAuthorization WorkAuthorization? @default(UNKNOWN)
+  workAuthorizationExpiresAt DateTime?
+  availability      Availability?
+  availabilityDate  DateTime?
+  noticePeriodDays  Int?
+  expectedSalaryCents Int?
+  expectedSalaryCurrency String?
+  currentSalaryCents  Int?
+  /// Rate the candidate is looking for / currently on, in the smallest unit.
+  expectedRateCents Int?
+  currentRateCents  Int?
+  ratePeriod        String?
+  rateCurrency      String?
+
+  linkedinUrl String?
+  githubUrl   String?
+  portfolioUrl String?
+  websiteUrl  String?
+
+  source     CandidateSource @default(MANUAL)
+  sourceDetail String?
+
+  status   String @default("ACTIVE")
+  rating   Int?
+  isHot    Boolean @default(false)
+  isArchived Boolean @default(false)
+
+  ownerId String?
+
+  /// Free-form tags; mirrors `TagLink` for fast list filtering.
+  tags String[] @default([])
+  customFields Json @default("{}")
+
+  externalId String?
+  /// Normalised keys used for exact duplicate detection (Phase 2). Fuzzy
+  /// matching uses `pg_trgm` on the raw name + company columns.
+  dedupeKey String?
+  emailNormalized    String?
+  phoneNormalized    String?
+  linkedinNormalized String?
+
+  /// Generated by Postgres from the searchable profile columns and queried with
+  /// `to_tsquery`. Declared as `Unsupported` so the migration engine knows the
+  /// column exists (and must not drop it) without trying to manage an
+  /// expression it cannot model.
+  searchVector Unsupported("tsvector")?
+
+  lastContactedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  createdById     String?
+  updatedById     String?
+
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner           User?                @relation("CandidateOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  resumes         CandidateResume[]
+  emails          CandidateEmail[]
+  phones          CandidatePhone[]
+  experiences     CandidateExperience[]
+  educations      CandidateEducation[]
+  candidateSkills CandidateSkill[]
+  certifications  CandidateCertification[]
+  languages       CandidateLanguage[]
+  applications    Application[]
+  activities      Activity[]
+  tasks           Task[]
+  notes           Note[]
+  attachments     Attachment[]
+  listMemberships CandidateListMember[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, ownerId, status])
+  @@index([tenantId, email])
+  @@index([tenantId, phone])
+  @@index([tenantId, emailNormalized])
+  @@index([tenantId, phoneNormalized])
+  @@index([tenantId, linkedinNormalized])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, dedupeKey])
+  /// Full-text and fuzzy indexes backing candidate search and duplicate
+  /// detection. `gin_trgm_ops` needs the `pg_trgm` extension, installed by the
+  /// `phase2_candidate_search` migration.
+  @@index([searchVector], type: Gin)
+  @@index([firstName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([lastName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([currentCompany(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("candidates")
+}
+
+model CandidateResume {
+  id          String @id @default(cuid())
+  tenantId    String
+  /// Null while the resume sits in the parsing/review queue before the reviewer
+  /// either creates a new candidate or attaches it to an existing one.
+  candidateId String?
+
+  fileName     String
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int
+  isPrimary    Boolean @default(false)
+  version      Int     @default(1)
+
+  /// Raw extracted text, used for full-text search and re-parsing.
+  extractedText String?
+  /// Structured output of the parser (`ResumeParser` interface).
+  parsedData    Json?
+  parseStatus   ResumeParseStatus @default(PENDING)
+  parseError    String?
+  parsedAt      DateTime?
+  /// Which implementation produced `parsedData`: `llm` | `regex` | `manual`.
+  parserUsed       String?
+  parserConfidence Float?
+  parseDurationMs  Int?
+
+  uploadedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@index([tenantId, parseStatus])
+  @@index([tenantId, createdAt])
+  @@map("candidate_resumes")
+}
+
+model CandidateExperience {
+  id          String @id @default(cuid())
+  tenantId    String
+  candidateId String
+
+  company     String
+  title       String
+  employmentType String?
+  location    String?
+  startDate   DateTime?
+  endDate     DateTime?
+  isCurrent   Boolean @default(false)
+  description String?
+  /// Skills mentioned in this role; feeds AI matching.
+  skills      String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@index([tenantId, startDate])
+  @@map("candidate_experiences")
+}
+
+model CandidateEducation {
+  id          String @id @default(cuid())
+  tenantId    String
+  candidateId String
+
+  institution String
+  degree      String?
+  fieldOfStudy String?
+  startDate   DateTime?
+  endDate     DateTime?
+  grade       String?
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@map("candidate_educations")
+}
+
+model CandidateSkill {
+  tenantId    String
+  candidateId String
+  skillId     String
+
+  years      Int?
+  level      Int?
+  isPrimary  Boolean @default(false)
+  lastUsedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  skill     Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([candidateId, skillId])
+  @@index([tenantId])
+  @@index([skillId])
+  @@map("candidate_skills")
+}
+
+// -----------------------------------------------------------------------------
+// ATS: applications, interviews, offers, placements
+// -----------------------------------------------------------------------------
+
+model Application {
+  id          String @id @default(cuid())
+  tenantId    String
+  jobId       String
+  candidateId String
+
+  stageId String
+  status  ApplicationStatus @default(ACTIVE)
+
+  /// Client-facing submission state, tracked separately from the internal stage.
+  submissionStatus SubmissionStatus @default(DRAFT)
+  submittedAt      DateTime?
+  submittedById    String?
+  clientFeedback   String?
+  clientFeedbackAt DateTime?
+
+  /// Position of the card in the Kanban column (fractional indexing).
+  boardOrder Float @default(0)
+
+  source CandidateSource?
+  rating Int?
+  isRejected Boolean @default(false)
+  rejectedReason String?
+  rejectedAt     DateTime?
+  rejectedStageId String?
+
+  appliedAt        DateTime  @default(now())
+  lastStageChangedAt DateTime @default(now())
+  /// When the candidate entered the current stage — powers days-in-stage and
+  /// SLA flags without walking the whole history table.
+  stageEnteredAt   DateTime  @default(now())
+  ownerId          String?
+
+  /// Snapshot of the resume sent to the client, if a tailored version was used.
+  resumeId String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job       Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  stage     JobPipelineStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  owner     User?            @relation("ApplicationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  history   StageHistory[]
+  interviews Interview[]
+  offers    Offer[]
+  placement Placement?
+
+  /// A candidate can only be in a given job's pipeline once.
+  @@unique([tenantId, jobId, candidateId])
+  @@index([tenantId, status])
+  @@index([tenantId, jobId, stageId, boardOrder])
+  @@index([tenantId, stageId, stageEnteredAt])
+  @@index([tenantId, candidateId])
+  @@index([tenantId, submissionStatus])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, deletedAt])
+  @@map("applications")
+}
+
+model StageHistory {
+  id            String @id @default(cuid())
+  tenantId      String
+  applicationId String
+
+  fromStageId String?
+  toStageId   String
+  note        String?
+  changedById String?
+  /// Seconds spent in the previous stage; powers time-in-stage analytics.
+  durationSeconds Int?
+
+  createdAt DateTime @default(now())
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  toStage     JobPipelineStage @relation("StageHistoryTo", fields: [toStageId], references: [id], onDelete: Restrict)
+  fromStage   JobPipelineStage? @relation("StageHistoryFrom", fields: [fromStageId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, applicationId, createdAt])
+  @@index([tenantId, toStageId])
+  @@map("stage_history")
+}
+
+model Interview {
+  id            String @id @default(cuid())
+  tenantId      String
+  applicationId String
+
+  type     InterviewType   @default(VIDEO)
+  status   InterviewStatus @default(SCHEDULED)
+  round    Int             @default(1)
+  title    String?
+
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  timezone       String @default("UTC")
+  durationMinutes Int   @default(60)
+  location       String?
+  meetingUrl     String?
+
+  /// Client-side interviewer name when the contact has no user account.
+  externalInterviewer String?
+
+  feedback   String?
+  rating     Int?
+  strengths  String?
+  concerns   String?
+  feedbackAt DateTime?
+  submittedById String?
+
+  calendarEventId String?
+  reminderSentAt  DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interviewers InterviewInterviewer[]
+
+  @@index([tenantId, scheduledStart])
+  @@index([tenantId, applicationId])
+  @@index([tenantId, status])
+  @@map("interviews")
+}
+
+model InterviewInterviewer {
+  tenantId    String
+  interviewId String
+  userId      String
+
+  isLead Boolean @default(false)
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([interviewId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("interview_interviewers")
+}
+
+model Offer {
+  id            String @id @default(cuid())
+  tenantId      String
+  applicationId String
+
+  status OfferStatus @default(DRAFT)
+
+  title        String?
+  salaryCents  Int?
+  payRateCents Int?
+  billRateCents Int?
+  /// `HOURLY` | `DAILY` | `MONTHLY` | `ANNUAL` — how the rates are expressed.
+  ratePeriod   String @default("ANNUAL")
+  currency     String @default("USD")
+  bonusCents   Int?
+  equityNote   String?
+
+  startDate   DateTime?
+  expiresAt   DateTime?
+  sentAt      DateTime?
+  respondedAt DateTime?
+  declineReason String?
+  notes       String?
+  documentKey String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  placement   Placement?
+
+  @@index([tenantId, status])
+  @@index([tenantId, applicationId])
+  @@map("offers")
+}
+
+model Placement {
+  id            String @id @default(cuid())
+  tenantId      String
+  applicationId String @unique
+  offerId       String? @unique
+
+  status PlacementStatus @default(ACTIVE)
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  /// All rates in the smallest currency unit.
+  payRateCents   Int?
+  billRateCents  Int?
+  /// `HOURLY` | `DAILY` | `MONTHLY` | `ANNUAL` — how the rates are expressed.
+  ratePeriod     String @default("ANNUAL")
+  currency       String @default("USD")
+  /// Spread between bill and pay, stored for reporting so it stays stable if
+  /// the source rates are later edited.
+  marginCents    Int?
+  marginPercentage Decimal? @db.Decimal(6, 2)
+
+  /// One-off placement fee for permanent roles.
+  feeCents       Int?
+  feePercentage  Decimal? @db.Decimal(5, 2)
+  guaranteeDays  Int?
+
+  recruiterId String?
+  clientId    String?
+  jobId       String?
+
+  notes       String?
+  invoiceRef  String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  offer       Offer?      @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, startDate])
+  @@index([tenantId, recruiterId])
+  @@map("placements")
+}
+
+// -----------------------------------------------------------------------------
+// Engagement: activities, tasks, notes, attachments, tags
+// -----------------------------------------------------------------------------
+
+model Activity {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  type      ActivityType      @default(NOTE)
+  direction ActivityDirection?
+
+  subject   String
+  body      String?
+  occurredAt DateTime @default(now())
+  durationMinutes Int?
+
+  entityType EntityType
+  entityId   String
+
+  /// Denormalised links so a candidate timeline can be fetched in one query.
+  candidateId   String?
+  clientId      String?
+  jobId         String?
+  contactId     String?
+  applicationId String?
+
+  /// Email-specific fields, populated by the mailer.
+  emailMessageId String?
+  outcome        String?
+  nextStepAt     DateTime?
+
+  isPinned Boolean @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  job       Job?       @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, entityType, entityId, occurredAt])
+  @@index([tenantId, candidateId, occurredAt])
+  @@index([tenantId, jobId, occurredAt])
+  @@index([tenantId, type, occurredAt])
+  @@index([tenantId, createdById, occurredAt])
+  @@map("activities")
+}
+
+model Task {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  title       String
+  description String?
+  status      TaskStatus @default(OPEN)
+  priority    Priority   @default(MEDIUM)
+
+  dueAt       DateTime?
+  completedAt DateTime?
+  reminderAt  DateTime?
+
+  assigneeId String?
+
+  entityType EntityType?
+  entityId   String?
+  candidateId String?
+  jobId       String?
+
+  parentTaskId String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignee  User?      @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  parent    Task?      @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  subTasks  Task[]     @relation("SubTasks")
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, dueAt])
+  @@index([tenantId, assigneeId, status])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, deletedAt])
+  @@map("tasks")
+}
+
+model Note {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  body     String
+  isPinned Boolean @default(false)
+
+  entityType EntityType
+  entityId   String
+  candidateId String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, entityType, entityId, createdAt])
+  @@map("notes")
+}
+
+model Attachment {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  fileName   String
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  category   String @default("DOCUMENT")
+
+  entityType EntityType
+  entityId   String
+  candidateId String?
+  jobId       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, candidateId])
+  @@map("attachments")
+}
+
+model Tag {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  name  String
+  color String @default("#64748b")
+  /// Groups tags in the picker, e.g. "Visa", "Skill", "Priority".
+  category String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  createdById String?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tagLinks TagLink[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, category])
+  @@map("tags")
+}
+
+model TagLink {
+  id       String  @id @default(cuid())
+  tenantId String
+  tagId    String
+
+  entityType EntityType
+  entityId   String
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, entityType, entityId])
+  @@index([tenantId, entityType, entityId])
+  @@map("tag_links")
+}
+
+// -----------------------------------------------------------------------------
+// Email
+// -----------------------------------------------------------------------------
+
+model EmailTemplate {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  name        String
+  /// Unique slug used by services and the UI.
+  key         String
+  subject     String
+  body        String  @db.Text
+  /// Optional MJML/HTML wrapper for branded submission emails.
+  htmlBody    String? @db.Text
+
+  category    String  @default("GENERAL")
+  /// e.g. ["candidate.firstName", "job.title"]
+  mergeFields String[] @default([])
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  emailMessages EmailMessage[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, category])
+  @@map("email_templates")
+}
+
+model EmailMessage {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  direction String  @default("OUTBOUND")
+
+  fromAddress String
+  fromName    String?
+  toAddresses String[] @default([])
+  ccAddresses String[] @default([])
+  bccAddresses String[] @default([])
+  replyTo     String?
+
+  subject String
+  bodyText String? @db.Text
+  bodyHtml String? @db.Text
+
+  status EmailMessageStatus @default(QUEUED)
+  error  String?
+
+  providerMessageId String?
+  /// RFC message id used to thread replies.
+  messageId String?
+  inReplyTo String?
+
+  templateId String?
+
+  entityType EntityType?
+  entityId   String?
+  candidateId String?
+  jobId       String?
+
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, candidateId])
+  @@index([tenantId, entityType, entityId])
+  @@map("email_messages")
+}
+
+model Notification {
+  id       String  @id @default(cuid())
+  tenantId String
+  userId   String
+
+  /// e.g. `task.assigned`, `interview.scheduled`, `submission.feedback`
+  type    String
+  channel NotificationChannel @default(IN_APP)
+  title   String
+  body    String?
+  link    String?
+  icon    String?
+
+  actorId String?
+  readAt  DateTime?
+
+  entityType EntityType?
+  entityId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, readAt])
+  @@index([tenantId, userId, createdAt])
+  @@map("notifications")
+}
+
+// -----------------------------------------------------------------------------
+// Extensibility
+// -----------------------------------------------------------------------------
+
+model CustomField {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  entity   CustomFieldEntity
+  label    String
+  /// Machine key used in filters and CSV import mapping.
+  key      String
+  type     CustomFieldType
+  helpText String?
+  required Boolean @default(false)
+  /// Choices for SELECT / MULTI_SELECT.
+  options  Json @default("[]")
+  defaultValue Json?
+  order    Int  @default(0)
+  isActive Boolean @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  values CustomFieldValue[]
+
+  @@unique([tenantId, entity, key])
+  @@index([tenantId, entity, order])
+  @@map("custom_fields")
+}
+
+model CustomFieldValue {
+  id       String @id @default(cuid())
+  tenantId String
+  fieldId  String
+
+  /// Polymorphic pointer to the owning record (candidate / job / client / contact).
+  recordId   String
+  value      String? @db.Text
+  jsonValue  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  field  CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldId, recordId])
+  @@index([tenantId, recordId])
+  @@map("custom_field_values")
+}
+
+model SavedSearch {
+  id       String  @id @default(cuid())
+  tenantId String
+  userId   String?
+
+  entity    String
+  name      String
+  /// Serialised filter state, replayed verbatim by the list pages.
+  filters   Json    @default("{}")
+  columns   String[] @default([])
+  sortBy    String?
+  sortDir   String?
+  visibility Visibility @default(PRIVATE)
+  isDefault Boolean    @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entity, userId])
+  @@map("saved_searches")
+}
+
+model ImportJob {
+  id       String  @id @default(cuid())
+  tenantId String
+
+  entity    ImportEntityType
+  status    ImportStatus @default(PENDING)
+  fileName  String
+  storageKey String
+  mimeType  String
+
+  /// Column mapping: { "<csvHeader>": "<fieldKey>" }
+  mapping   Json @default("{}")
+  options   Json @default("{}")
+
+  totalRows     Int @default(0)
+  processedRows Int @default(0)
+  createdRows   Int @default(0)
+  updatedRows   Int @default(0)
+  skippedRows   Int @default(0)
+  failedRows    Int @default(0)
+
+  /// Per-row errors: [{ row, field, message }]
+  errors Json @default("[]")
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, entity])
+  @@map("import_jobs")
+}
+
+// -----------------------------------------------------------------------------
+// Phase 2 — Core ATS support models
+// -----------------------------------------------------------------------------
+
+/// Concurrency-safe per-tenant counters. `JOB` backs `JOB-0001`. Allocation
+/// happens inside a transaction with a row-level lock so two parallel creates
+/// can never collide.
+model TenantSequence {
+  tenantId String
+  /// Logical counter name, e.g. `JOB`.
+  key      String
+  value    Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key])
+  @@map("tenant_sequences")
+}
+
+/// Tenant-configurable rejection reasons offered when moving a candidate into a
+/// REJECTED stage.
+model RejectionReason {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// Stable slug used by automations; unique per tenant.
+  key      String
+  label    String
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+  isSystem Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, order])
+  @@map("rejection_reasons")
+}
+
+/// One of potentially many email addresses on a candidate. Exactly one is the
+/// primary; the denormalised `Candidate.email` mirrors it for list rendering.
+model CandidateEmail {
+  id          String @id @default(cuid())
+  tenantId    String
+  candidateId String
+
+  address   String
+  label     String?
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@index([tenantId, address])
+  @@map("candidate_emails")
+}
+
+/// Multiple phone numbers per candidate, stored in E.164 where possible.
+model CandidatePhone {
+  id          String @id @default(cuid())
+  tenantId    String
+  candidateId String
+
+  number    String
+  label     String?
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@index([tenantId, number])
+  @@map("candidate_phones")
+}
+
+model CandidateCertification {
+  id          String @id @default(cuid())
+  tenantId    String
+  candidateId String
+
+  name          String
+  issuer        String?
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+  credentialId  String?
+  credentialUrl String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@map("candidate_certifications")
+}
+
+model CandidateLanguage {
+  id          String @id @default(cuid())
+  tenantId    String
+  candidateId String
+
+  name        String
+  proficiency SkillProficiency @default(PROFESSIONAL)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, candidateId])
+  @@map("candidate_languages")
+}
+
+/// Hotlist / talent pool — a named, shareable collection of candidates used for
+/// bench sales and campaigns.
+model CandidateList {
+  id       String @id @default(cuid())
+  tenantId String
+
+  name        String
+  description String?
+  color       String? @default("#6366f1")
+  visibility  Visibility @default(TENANT)
+  ownerId     String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members CandidateListMember[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, deletedAt])
+  @@map("candidate_lists")
+}
+
+model CandidateListMember {
+  id          String @id @default(cuid())
+  tenantId    String
+  listId      String
+  candidateId String
+
+  addedById String?
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  list      CandidateList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  candidate Candidate      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, candidateId])
+  @@index([tenantId, candidateId])
+  @@index([tenantId, listId])
+  @@map("candidate_list_members")
+}
+
+/// Reusable CSV/Excel import column mapping.
+model ImportTemplate {
+  id       String @id @default(cuid())
+  tenantId String
+
+  name    String
+  entity  ImportEntityType
+  /// `{ "<csvHeader>": "<fieldKey>" }`
+  mapping Json @default("{}")
+  options Json @default("{}")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, entity, name])
+  @@index([tenantId, entity])
+  @@map("import_templates")
+}
+
+/// A long-running bulk action over a filter-based selection, processed by a
+/// BullMQ worker with progress reported back to the UI.
+model BulkOperation {
+  id       String @id @default(cuid())
+  tenantId String
+
+  type   BulkOperationType
+  status BulkOperationStatus @default(PENDING)
+
+  /// Either `{ ids: [...] }` or `{ all: true, filters: {...} }`.
+  selection Json @default("{}")
+  /// Action-specific arguments (tags to add, target stage, new status, …).
+  payload   Json @default("{}")
+
+  totalItems     Int @default(0)
+  processedItems Int @default(0)
+  succeededItems Int @default(0)
+  failedItems    Int @default(0)
+
+  /// `[{ id, message }]` for rows that could not be processed.
+  errors Json @default("[]")
+  /// Storage key of a generated export file, when the operation produced one.
+  resultKey String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@map("bulk_operations")
+}
+
+// -----------------------------------------------------------------------------
+// Governance
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id       String @id @default(cuid())
+  tenantId String
+
+  action   AuditAction
+  entity   String
+  entityId String?
+
+  /// Field-level diff for updates: { "status": { "from": "OPEN", "to": "CLOSED" } }
+  changes Json?
+  /// Redacted snapshot for creates and deletes.
+  snapshot Json?
+
+  description String?
+
+  actorId   String?
+  actorEmail String?
+  actorName String?
+
+  ipAddress String?
+  userAgent String?
+  requestId String?
+  /// True when a super admin performed the action on behalf of this tenant.
+  isImpersonated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId, createdAt])
+  @@index([tenantId, actorId, createdAt])
+  @@index([tenantId, action, createdAt])
+  @@map("audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// AI (Phase 6) — table exists from Phase 1 so pgvector is wired up
+// -----------------------------------------------------------------------------
+
+model CandidateEmbedding {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// `CANDIDATE` | `JOB`
+  entityType String @default("CANDIDATE")
+  entityId   String
+
+  content    String @db.Text
+  model      String
+  dimensions Int    @default(1536)
+  /// Populated via raw SQL; Prisma does not model the `vector` type natively.
+  embedding  Unsupported("vector(1536)")?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, entityType, entityId])
+  @@index([tenantId, entityType])
+  @@map("candidate_embeddings")
+}

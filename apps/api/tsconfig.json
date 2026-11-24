@@ -1,0 +1,19 @@
+{
+  "extends": "@talentflow/config/tsconfig/nest.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // Kept inside `dist` so it is removed together with the output it describes.
+    // A buildinfo left outside `dist` survives `deleteOutDir` and makes an
+    // incremental build believe files are already emitted, producing a `dist`
+    // that is missing most modules.
+    "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+}
